@@ -1,0 +1,2 @@
+# One line-ending style in the repo regardless of who commits from which OS.
+* text=auto eol=lf

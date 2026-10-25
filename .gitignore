@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Secrets: never commit real environment files. The *.example files are the documented templates.
+.env
+.env.*
+!.env.example
+
+# Build output and caches
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local working notes and the assignment brief (the company's material) stay out of the repo.
+# The seed data the app needs lives in backend/data/.
+brain/
