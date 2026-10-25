@@ -1,0 +1,389 @@
+openapi: 3.0.3
+info:
+  title: BookLeaf Author Support & Communication Portal API
+  version: 1.0.0
+  description: |
+    Production-grade RESTful API powering BookLeaf Publishing's dual-interface Author Support and Admin Operations Portal.
+    Includes AI auto-classification, urgency scoring, knowledge-base calibrated draft generation, and Server-Sent Events (SSE).
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local Development Server
+
+paths:
+  /auth/login:
+    post:
+      summary: Author or Admin Sign In
+      tags: [Authentication]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  example: priya.sharma@email.com
+                password:
+                  type: string
+                  example: Password123!
+      responses:
+        200:
+          description: Login successful, returns JWT bearer token and user profile
+        401:
+          description: Invalid email or password
+
+  /auth/me:
+    get:
+      summary: Get Current Authenticated Profile
+      tags: [Authentication]
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: User profile details
+        401:
+          description: Missing or expired token
+
+  /books:
+    get:
+      summary: List Books
+      description: Authors only receive their own published/in-production titles. Admins see all or filter by authorId.
+      tags: [Books]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: authorId
+          schema:
+            type: string
+          description: (Admin only) Filter books for a specific author
+      responses:
+        200:
+          description: Array of books with royalty, ISBN, sales, and publication status
+
+  /books/{bookId}:
+    get:
+      summary: Get Single Book Detail
+      tags: [Books]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: bookId
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Book details
+        404:
+          description: Book not found
+
+  /tickets:
+    get:
+      summary: List Tickets
+      description: Authors receive only their own tickets. Admins receive all tickets across all authors with triage metadata and sorting.
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [Open, In Progress, Resolved, Closed]
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: priority
+          schema:
+            type: string
+            enum: [Critical, High, Medium, Low]
+        - in: query
+          name: q
+          schema:
+            type: string
+          description: Search term matching subject, description or ticket number
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [urgency, newest, oldest, activity]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        200:
+          description: Paginated ticket collection
+
+    post:
+      summary: Submit a New Support Query
+      description: Creates a ticket with instant keyword triage and asynchronous LLM auto-classification.
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, description]
+              properties:
+                bookId:
+                  type: string
+                  nullable: true
+                subject:
+                  type: string
+                  example: Missing Q3 royalty payout
+                description:
+                  type: string
+                  example: I sold 342 copies of Whispers of the Ganges but haven't received the remaining ₹3,570.
+                attachments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      fileName:
+                        type: string
+                      sizeBytes:
+                        type: integer
+      responses:
+        201:
+          description: Ticket created successfully
+
+  /tickets/stats:
+    get:
+      summary: Support Queue Statistics (Admin Only)
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: Overview stats (open, in progress, resolved, critical counts)
+
+  /tickets/{ticketId}:
+    get:
+      summary: Get Ticket Detail and Full Message History
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: ticketId
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Detailed ticket view with messages (and internal notes for admins)
+
+    patch:
+      summary: Update Ticket Triage & Status (Admin Only)
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: ticketId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [Open, In Progress, Resolved, Closed]
+                category:
+                  type: string
+                priority:
+                  type: string
+                  enum: [Critical, High, Medium, Low]
+                assignee:
+                  type: string
+                  nullable: true
+                  enum: [me]
+      responses:
+        200:
+          description: Ticket updated
+
+  /tickets/{ticketId}/messages:
+    post:
+      summary: Post a Message to Conversation
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: ticketId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                fromAiDraft:
+                  type: boolean
+                  default: false
+      responses:
+        201:
+          description: Message posted
+
+  /tickets/{ticketId}/notes:
+    post:
+      summary: Add Internal Note (Admin Only)
+      description: Notes are private and never visible to authors.
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: ticketId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+      responses:
+        201:
+          description: Internal note saved
+
+  /tickets/{ticketId}/draft:
+    post:
+      summary: Generate or Fetch AI Response Draft (Admin Only)
+      description: Generates an empathetic response grounded in BookLeaf Knowledge Base and author's specific sales data.
+      tags: [Tickets]
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: ticketId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh:
+                  type: boolean
+                  default: false
+      responses:
+        200:
+          description: AI generated draft text and metadata
+
+  /realtime/stream:
+    get:
+      summary: Server-Sent Events (SSE) Live Ticket Stream
+      tags: [Realtime]
+      description: |
+        Stream live ticket events (`ticket.created`, `ticket.updated`, `ticket.message`) as
+        `event: ticket` frames whose `data` is `{ type, ticketId, authorId }`. Events carry ids only;
+        refetch through the normal endpoints. Admins receive every event, authors only their own.
+        Authenticate with the `Authorization: Bearer` header (read the stream with `fetch`, not `EventSource`).
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: SSE text/event-stream stream
+
+  /ai/status:
+    get:
+      summary: AI subsystem status (admin only)
+      description: |
+        Which providers are configured, how each task is routed (ordered fallback chains),
+        circuit-breaker state, queue depth, and per-model call/failure/token counters.
+        API keys are never included.
+      tags: [AI]
+      security:
+        - BearerAuth: []
+      responses:
+        200:
+          description: Current AI status
+        403:
+          description: Admin role required
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ApiSuccess:
+      type: object
+      description: Every successful response uses this envelope.
+      required: [success, message, data, requestId, timestamp]
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: Tickets retrieved successfully. }
+        data: { description: Endpoint-specific payload (null when there is none). }
+        meta:
+          $ref: '#/components/schemas/PageMeta'
+        requestId: { type: string, format: uuid, description: Also returned in the X-Request-Id header. }
+        timestamp: { type: string, format: date-time }
+    PageMeta:
+      type: object
+      description: Present on paginated lists.
+      properties:
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 20 }
+        total: { type: integer, example: 42 }
+        totalPages: { type: integer, example: 3 }
+    ApiError:
+      type: object
+      description: Every failure uses this envelope. Branch on error.code; show message to people.
+      required: [success, message, error, requestId, timestamp]
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string, example: Subject must be at least 3 characters. }
+        error:
+          type: object
+          required: [code]
+          properties:
+            code:
+              type: string
+              enum: [BAD_REQUEST, VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, RATE_LIMITED, SERVICE_UNAVAILABLE, INTERNAL_ERROR]
+            details:
+              type: array
+              description: Per-field problems (validation errors only).
+              items:
+                type: object
+                properties:
+                  field: { type: string, example: subject }
+                  message: { type: string, example: Subject must be at least 3 characters. }
+        requestId: { type: string }
+        timestamp: { type: string, format: date-time }
