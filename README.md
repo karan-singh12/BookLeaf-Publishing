@@ -77,6 +77,7 @@ This platform delivers a **unified, resilient web application** that automates c
 - **Unified Ticket Queue**: Centralized queue with real-time status counters, natural-language search, and faceted filtering across Status (*Open, In Progress, Resolved, Closed*), Category, Priority, and Date Ranges.
 - **Urgency Ordering**: Smart default sort bubbling unresolved Critical & High tickets to the top, followed by oldest pending queries. Overdue ticket age badges (>48h) visually flag SLA breaches.
 - **Author 360° Inspector**: Side-drawer detailing author profile, lifetime sales, joined date, and all linked book metrics alongside the active conversation.
+- **Onboard New Author**: Direct admin onboarding modal (`+ Onboard Author`) to provision new author accounts with auto-assigned author codes (`AUTH011`), custom or default credentials, and instant login readiness.
 - **AI Triage & Manual Override**: Transparent view of AI classification reasoning, confidence, model attribution, and instant admin overrides for Category and Priority.
 - **Fact-Grounded AI Draft Assistant**: 1-click AI draft generation calibrated with BookLeaf's knowledge base and real-time database numbers (copies sold, pending royalties, calculated calendar quarters). Supports inline editing, regeneration, and 1-click dispatch.
 - **Private Internal Notes**: Secure internal collaboration notes flagged `visibility: internal` that are stripped at the database layer and never visible to authors.
@@ -129,14 +130,22 @@ npm install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your MongoDB URI and optional GEMINI_API_KEY
-# (If GEMINI_API_KEY is omitted, the system seamlessly runs in deterministic heuristic/template mode)
+# Edit .env with your MongoDB URI and optional AI keys:
+# - MONGODB_URI=mongodb://localhost:27017/bookleaf
+# - JWT_SECRET=your-secret-key
+# - GEMINI_API_KEY=your-gemini-key (Primary Tier 1)
+# - GROK_API_KEY=your-grok-or-groq-key (Tier 2 Fallback)
+# - OPENROUTER_API_KEY=your-openrouter-key (Tier 3 Fallback, e.g. Llama 3.3 free)
+# (If all AI keys are omitted, the system seamlessly runs in deterministic heuristic/template mode with zero crashes)
 
 # Seed database with the 10 authors, 18 books, and initial tickets
 npm run seed
 
-# Run the test suite (94 passing tests)
+# Run the test suite (94 passing tests across 19 suites)
 npm test
+
+# Verify AI Fallback Chain Health
+npm run ai:check
 
 # Start the backend development server (Runs on http://localhost:5000)
 npm run dev
@@ -262,20 +271,24 @@ To prevent hallucinated payout dates, fabricated inventory, or generic corporate
 
 ### 4. Resilience, Circuit Breakers & Graceful Degradation
 - **Circuit Breaker**: Trips to `OPEN` state after 3 consecutive upstream failures, immediately serving fallbacks without wasting latency on failing APIs during outages.
-- **Ordered Fallback Chains**: Configurable via `AI_ROUTE_DEFAULT` (e.g., `gemini:gemini-2.5-flash -> openai:gpt-4o-mini -> template`).
-- **Deterministic Category Fallback Templates**: If all AI providers fail or no API key is configured, the system generates a tailored template response addressing the author by name and citing specific BookLeaf policy timelines. **Tickets never fail, and ticket creation is never blocked.**
+- **Ordered Multi-Tier Fallback Chains**: Configurable via `AI_ROUTE_DEFAULT` (`gemini ➔ groq ➔ openrouter ➔ templates`):
+  1. **1st Priority**: **Google Gemini 2.0 / 2.5 Flash** (Primary fast & cost-efficient model).
+  2. **2nd Priority**: **Groq** (Ultra-low latency open-weights inference engine).
+  3. **3rd Fallback**: **OpenRouter** (Aggregator fallback supporting free models like `meta-llama/llama-3.3-70b-instruct:free`).
+  4. **4th Graceful Degradation**: **Deterministic Category Fallback Templates** (Personalized by author name & BookLeaf policies).
+- **Deterministic Category Fallback Templates**: If all AI providers fail, rate-limit, or lack API keys, the system generates a tailored template response addressing the author by name and citing specific BookLeaf policy timelines. **Tickets never fail, and ticket creation is never blocked.**
 
 ### 5. Model Choice & Evaluation Justification
-The assignment allows choosing OpenAI, Anthropic, or any LLM API with brief justification. We evaluated multiple candidates before choosing **Gemini 2.0 Flash** as primary:
+The assignment allows choosing OpenAI, Anthropic, or any LLM API with brief justification. We evaluated multiple candidates before choosing **Gemini 2.0 / 2.5 Flash** as primary with **Groq** and **OpenRouter** as active fallbacks:
 
-| Model Evaluated | Input / Output per 1M | Latency (TTFT) | Evaluation Justification |
-| :--- | :---: | :---: | :--- |
-| **Google Gemini 2.0 Flash (Chosen Primary)** | **$0.10 / $0.40** | **~380ms** | **Winner**. Ultra-fast latency suitable for async triage; strict JSON Schema output compliance; configurable thinking budget (`GEMINI_THINKING_BUDGET=0`) prevents run-on token spend; lowest cost in class. |
-| **OpenAI GPT-4o-mini (Supported Secondary)** | $0.15 / $0.60 | ~620ms | Excellent structured outputs (`response_format: json_schema`) and deterministic classification. Configured as secondary fallback. |
-| **Anthropic Claude 3.5 Haiku (Supported)** | $0.80 / $4.00 | ~750ms | Superior nuance and empathetic voice, but 8x higher token pricing. Configured in fallback chain for complex tone calibration. |
-| **Meta Llama 3.3 70B via OpenRouter (Supported)** | $0.12 / $0.30 | ~850ms | Open-source foundation eliminating proprietary vendor lock-in. Supported out of the box in `ai-sdk`. |
+| Model / Provider | Latency (TTFT) | Evaluation Justification | Role in BookLeaf |
+| :--- | :---: | :--- | :--- |
+| **Google Gemini Flash (Primary)** | **~380ms** | Ultra-fast latency for background triage; native JSON Schema output compliance; lowest cost in class ($0.10/M tokens). | **1st Priority** |
+| **Groq (Secondary)** | **~240ms** | Fastest LPUs in industry; delivers sub-300ms draft responses during Gemini spikes or maintenance. | **2nd Priority** |
+| **OpenRouter (Free Fallback)** | **~600ms** | Universal open model gateway supporting free models (`meta-llama/llama-3.3-70b:free`). | **3rd Fallback** |
+| **Deterministic Templates** | **<1ms** | Pre-calibrated category templates with personal author address and policy SLA timelines. | **Final Safeguard** |
 
-**Provider-Agnostic Abstraction**: The backend `ai-sdk` implements a unified connector interface. If Gemini experiences API quotas or deprecation, switching to OpenAI or Anthropic requires only updating the `.env` fallback order (`AI_ROUTE_DEFAULT=openai:gpt-4o-mini,gemini:gemini-2.5-flash`) without altering a single line of business logic.
+**Provider-Agnostic Abstraction**: The backend `ai-sdk` implements a unified connector interface. Any provider can be prioritized or re-ordered in `.env` without altering a single line of business logic.
 
 ---
 
@@ -294,6 +307,7 @@ Interactive documentation is available at **`/api/docs`** (Swagger UI).
 | **GET** | `/api/v1/health` | None | Public | Liveness, readiness, uptime, and AI provider status. |
 | **POST** | `/api/v1/auth/login` | None | Public | Sign in with email and password; returns JWT bearer token. |
 | **GET** | `/api/v1/auth/me` | Bearer | All | Fetch currently authenticated user profile. |
+| **POST** | `/api/v1/auth/authors` | Bearer | Admin | Onboard new author with auto-assigned code and credentials. |
 | **GET** | `/api/v1/books` | Bearer | All | List books. Authors receive own books; Admins see all (filterable by `authorId`). |
 | **GET** | `/api/v1/books/:bookId` | Bearer | All | Get book details. Protected by author ownership guard. |
 | **GET** | `/api/v1/tickets` | Bearer | All | List tickets. Filter by `status`, `category`, `priority`, `q`, `sort`, `page`, `limit`. |
