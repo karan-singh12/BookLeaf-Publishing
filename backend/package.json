@@ -18,7 +18,8 @@
     "db:sync-indexes": "tsx src/scripts/sync-indexes.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "ai:cost": "tsx src/scripts/ai-cost.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

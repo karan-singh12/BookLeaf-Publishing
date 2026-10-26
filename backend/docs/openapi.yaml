@@ -10,6 +10,34 @@ servers:
     description: Local Development Server
 
 paths:
+  /health:
+    get:
+      summary: Service Health & AI Readiness Check
+      description: Returns liveness, database connection state, uptime, and AI provider configuration status.
+      tags: [System]
+      responses:
+        200:
+          description: Service is healthy and database is connected
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          status: { type: string, example: healthy }
+                          uptimeSeconds: { type: integer, example: 342 }
+                          database: { type: string, example: connected }
+                          ai: { type: string, example: configured }
+        503:
+          description: Database unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
   /auth/login:
     post:
       summary: Author or Admin Sign In
@@ -19,20 +47,27 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [email, password]
-              properties:
-                email:
-                  type: string
-                  example: priya.sharma@email.com
-                password:
-                  type: string
-                  example: Password123!
+              $ref: '#/components/schemas/LoginInput'
       responses:
         200:
           description: Login successful, returns JWT bearer token and user profile
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          token: { type: string, example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... }
+                          user: { $ref: '#/components/schemas/User' }
         401:
           description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 
   /auth/me:
     get:
@@ -43,8 +78,20 @@ paths:
       responses:
         200:
           description: User profile details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/User'
         401:
           description: Missing or expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 
   /books:
     get:
@@ -62,6 +109,18 @@ paths:
       responses:
         200:
           description: Array of books with royalty, ISBN, sales, and publication status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Book'
+        401:
+          $ref: '#/components/responses/Unauthorized'
 
   /books/{bookId}:
     get:
@@ -75,11 +134,24 @@ paths:
           required: true
           schema:
             type: string
+          description: MongoDB ObjectId of the book
       responses:
         200:
           description: Book details
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/Book'
         404:
-          description: Book not found
+          description: Book not found or belongs to another author
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 
   /tickets:
     get:
@@ -98,6 +170,13 @@ paths:
           name: category
           schema:
             type: string
+            enum:
+              - Royalty & Payments
+              - ISBN & Metadata Issues
+              - Printing & Quality
+              - Distribution & Availability
+              - Book Status & Production Updates
+              - General Inquiry
         - in: query
           name: priority
           schema:
@@ -107,12 +186,13 @@ paths:
           name: q
           schema:
             type: string
-          description: Search term matching subject, description or ticket number
+          description: Search term matching subject, description or ticket number (#1001)
         - in: query
           name: sort
           schema:
             type: string
             enum: [urgency, newest, oldest, activity]
+            default: urgency
         - in: query
           name: page
           schema:
@@ -126,10 +206,20 @@ paths:
       responses:
         200:
           description: Paginated ticket collection
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/TicketSummary'
 
     post:
       summary: Submit a New Support Query
-      description: Creates a ticket with instant keyword triage and asynchronous LLM auto-classification.
+      description: Creates a ticket with instant keyword triage (<5ms) and asynchronous LLM auto-classification.
       tags: [Tickets]
       security:
         - BearerAuth: []
@@ -138,30 +228,24 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [subject, description]
-              properties:
-                bookId:
-                  type: string
-                  nullable: true
-                subject:
-                  type: string
-                  example: Missing Q3 royalty payout
-                description:
-                  type: string
-                  example: I sold 342 copies of Whispers of the Ganges but haven't received the remaining ₹3,570.
-                attachments:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      fileName:
-                        type: string
-                      sizeBytes:
-                        type: integer
+              $ref: '#/components/schemas/CreateTicketInput'
       responses:
         201:
           description: Ticket created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/TicketDetail'
+        422:
+          description: Validation error (e.g. subject too short, description < 10 chars)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 
   /tickets/stats:
     get:
@@ -172,6 +256,16 @@ paths:
       responses:
         200:
           description: Overview stats (open, in progress, resolved, critical counts)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/StatsSummary'
+        403:
+          $ref: '#/components/responses/Forbidden'
 
   /tickets/{ticketId}:
     get:
@@ -187,7 +281,17 @@ paths:
             type: string
       responses:
         200:
-          description: Detailed ticket view with messages (and internal notes for admins)
+          description: Detailed ticket view with messages (internal notes masked for authors)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/TicketDetail'
+        404:
+          $ref: '#/components/responses/NotFound'
 
     patch:
       summary: Update Ticket Triage & Status (Admin Only)
@@ -205,27 +309,25 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum: [Open, In Progress, Resolved, Closed]
-                category:
-                  type: string
-                priority:
-                  type: string
-                  enum: [Critical, High, Medium, Low]
-                assignee:
-                  type: string
-                  nullable: true
-                  enum: [me]
+              $ref: '#/components/schemas/UpdateTicketInput'
       responses:
         200:
-          description: Ticket updated
+          description: Ticket updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/TicketDetail'
+        403:
+          $ref: '#/components/responses/Forbidden'
 
   /tickets/{ticketId}/messages:
     post:
-      summary: Post a Message to Conversation
+      summary: Post a Message to Ticket Thread
+      description: Authors or Admins post a public reply. Re-opens resolved tickets automatically when author replies.
       tags: [Tickets]
       security:
         - BearerAuth: []
@@ -240,22 +342,23 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [body]
-              properties:
-                body:
-                  type: string
-                fromAiDraft:
-                  type: boolean
-                  default: false
+              $ref: '#/components/schemas/PostMessageInput'
       responses:
         201:
-          description: Message posted
+          description: Message posted successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/TicketMessage'
 
   /tickets/{ticketId}/notes:
     post:
-      summary: Add Internal Note (Admin Only)
-      description: Notes are private and never visible to authors.
+      summary: Add Private Internal Note (Admin Only)
+      description: Notes are private and completely masked from authors at the database query level.
       tags: [Tickets]
       security:
         - BearerAuth: []
@@ -270,19 +373,25 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [body]
-              properties:
-                body:
-                  type: string
+              $ref: '#/components/schemas/InternalNoteInput'
       responses:
         201:
           description: Internal note saved
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/TicketMessage'
+        403:
+          $ref: '#/components/responses/Forbidden'
 
   /tickets/{ticketId}/draft:
     post:
       summary: Generate or Fetch AI Response Draft (Admin Only)
-      description: Generates an empathetic response grounded in BookLeaf Knowledge Base and author's specific sales data.
+      description: Generates an empathetic response grounded in BookLeaf Knowledge Base and author's specific sales data. Caches on ticket.
       tags: [Tickets]
       security:
         - BearerAuth: []
@@ -296,45 +405,67 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                refresh:
-                  type: boolean
-                  default: false
+              $ref: '#/components/schemas/DraftRequestInput'
       responses:
         200:
           description: AI generated draft text and metadata
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/DraftResponse'
+        403:
+          $ref: '#/components/responses/Forbidden'
 
   /realtime/stream:
     get:
       summary: Server-Sent Events (SSE) Live Ticket Stream
       tags: [Realtime]
       description: |
-        Stream live ticket events (`ticket.created`, `ticket.updated`, `ticket.message`) as
-        `event: ticket` frames whose `data` is `{ type, ticketId, authorId }`. Events carry ids only;
-        refetch through the normal endpoints. Admins receive every event, authors only their own.
-        Authenticate with the `Authorization: Bearer` header (read the stream with `fetch`, not `EventSource`).
+        Streams live ticket events (`ticket.created`, `ticket.updated`, `ticket.message`) as
+        `event: ticket` frames carrying `{ type, ticketId, authorId }`.
+        Admins receive every event, authors receive only their own events.
+        Authenticate with the `Authorization: Bearer <token>` header.
       security:
         - BearerAuth: []
       responses:
         200:
-          description: SSE text/event-stream stream
+          description: SSE text/event-stream stream with periodic keepalive pings (25s)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  : keepalive 1719230000000
+
+                  event: ticket
+                  data: {"type":"ticket.updated","ticketId":"662a...","authorId":"662b..."}
 
   /ai/status:
     get:
-      summary: AI subsystem status (admin only)
+      summary: AI Subsystem Status & Token Metrics (Admin Only)
       description: |
-        Which providers are configured, how each task is routed (ordered fallback chains),
-        circuit-breaker state, queue depth, and per-model call/failure/token counters.
-        API keys are never included.
+        Diagnostic status of configured LLM providers, circuit breaker state, active routing chains,
+        bulkhead queue depth, and per-model call/failure/token usage counters. API keys are strictly masked.
       tags: [AI]
       security:
         - BearerAuth: []
       responses:
         200:
-          description: Current AI status
+          description: Current AI system status
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/AiStatusResponse'
         403:
-          description: Admin role required
+          $ref: '#/components/responses/Forbidden'
 
 components:
   securitySchemes:
@@ -342,30 +473,52 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: Missing, invalid, or expired JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: Insufficient permissions (e.g. author calling admin endpoint)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Resource not found or denied due to tenant data isolation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
   schemas:
     ApiSuccess:
       type: object
-      description: Every successful response uses this envelope.
+      description: Universal success envelope used across all REST responses
       required: [success, message, data, requestId, timestamp]
       properties:
         success: { type: boolean, example: true }
-        message: { type: string, example: Tickets retrieved successfully. }
-        data: { description: Endpoint-specific payload (null when there is none). }
-        meta:
-          $ref: '#/components/schemas/PageMeta'
-        requestId: { type: string, format: uuid, description: Also returned in the X-Request-Id header. }
-        timestamp: { type: string, format: date-time }
+        message: { type: string, example: Operation completed successfully. }
+        data: { description: Endpoint-specific payload }
+        meta: { $ref: '#/components/schemas/PageMeta' }
+        requestId: { type: string, format: uuid, example: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d" }
+        timestamp: { type: string, format: date-time, example: "2026-10-26T12:00:00.000Z" }
+
     PageMeta:
       type: object
-      description: Present on paginated lists.
+      description: Pagination metadata
       properties:
         page: { type: integer, example: 1 }
         limit: { type: integer, example: 20 }
         total: { type: integer, example: 42 }
         totalPages: { type: integer, example: 3 }
+
     ApiError:
       type: object
-      description: Every failure uses this envelope. Branch on error.code; show message to people.
+      description: Universal error envelope
       required: [success, message, error, requestId, timestamp]
       properties:
         success: { type: boolean, example: false }
@@ -379,11 +532,211 @@ components:
               enum: [BAD_REQUEST, VALIDATION_ERROR, UNAUTHENTICATED, FORBIDDEN, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, RATE_LIMITED, SERVICE_UNAVAILABLE, INTERNAL_ERROR]
             details:
               type: array
-              description: Per-field problems (validation errors only).
               items:
                 type: object
                 properties:
                   field: { type: string, example: subject }
                   message: { type: string, example: Subject must be at least 3 characters. }
-        requestId: { type: string }
+        requestId: { type: string, example: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d" }
         timestamp: { type: string, format: date-time }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, example: "662a1234567890abcdef1001" }
+        authorCode: { type: string, nullable: true, example: "AUTH001" }
+        name: { type: string, example: "Priya Sharma" }
+        email: { type: string, example: "priya.sharma@email.com" }
+        role: { type: string, enum: [author, admin], example: "author" }
+        phone: { type: string, example: "+91-98765-43210" }
+        city: { type: string, example: "Varanasi" }
+        joinedDate: { type: string, format: date-time, example: "2023-01-15T00:00:00.000Z" }
+
+    Book:
+      type: object
+      properties:
+        id: { type: string, example: "662a1234567890abcdef2001" }
+        bookCode: { type: string, example: "BK001" }
+        title: { type: string, example: "Whispers of the Ganges" }
+        isbn: { type: string, example: "978-93-5000-001-1" }
+        genre: { type: string, example: "Fiction" }
+        publicationDate: { type: string, format: date-time, nullable: true, example: "2023-06-20T00:00:00.000Z" }
+        status: { type: string, example: "Published & Live" }
+        isPublished: { type: boolean, example: true }
+        mrp: { type: number, nullable: true, example: 399 }
+        royaltyPerCopy: { type: number, nullable: true, example: 35 }
+        copiesSold: { type: integer, example: 342 }
+        royaltyEarned: { type: number, example: 11970 }
+        royaltyPaid: { type: number, example: 8400 }
+        royaltyPending: { type: number, example: 3570 }
+        lastPayoutDate: { type: string, format: date-time, nullable: true, example: "2025-10-15T00:00:00.000Z" }
+        printPartner: { type: string, nullable: true, example: "In-House" }
+        platforms:
+          type: array
+          items: { type: string }
+          example: ["Amazon India", "Flipkart", "BookLeaf Store"]
+
+    Attachment:
+      type: object
+      properties:
+        fileName: { type: string, example: "royalty_bank_statement.pdf" }
+        sizeBytes: { type: integer, example: 1048576 }
+
+    AiClassification:
+      type: object
+      properties:
+        status: { type: string, enum: [pending, completed, failed], example: "completed" }
+        source: { type: string, enum: [keyword, llm], example: "llm" }
+        category: { type: string, example: "Royalty & Payments" }
+        priority: { type: string, enum: [Critical, High, Medium, Low], example: "Medium" }
+        reasoning: { type: string, example: "Author inquiring regarding quarterly payout timeline and bank credit status." }
+        model: { type: string, example: "gemini:gemini-2.5-flash" }
+        classifiedAt: { type: string, format: date-time }
+
+    TicketSummary:
+      type: object
+      properties:
+        id: { type: string, example: "662a1234567890abcdef3001" }
+        number: { type: integer, example: 1001 }
+        author:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string, example: "Priya Sharma" }
+            email: { type: string, example: "priya.sharma@email.com" }
+            authorCode: { type: string, example: "AUTH001" }
+        book:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            title: { type: string, example: "Whispers of the Ganges" }
+            bookCode: { type: string, example: "BK001" }
+            status: { type: string, example: "Published & Live" }
+        subject: { type: string, example: "Missing Q3 royalty payout" }
+        status: { type: string, enum: [Open, In Progress, Resolved, Closed], example: "In Progress" }
+        category: { type: string, example: "Royalty & Payments" }
+        priority: { type: string, enum: [Critical, High, Medium, Low], example: "Medium" }
+        categoryOverridden: { type: boolean, example: false }
+        priorityOverridden: { type: boolean, example: false }
+        assignee:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            name: { type: string, example: "Aditi Verma" }
+        ai: { $ref: '#/components/schemas/AiClassification' }
+        lastActivityAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+
+    TicketDetail:
+      allOf:
+        - $ref: '#/components/schemas/TicketSummary'
+        - type: object
+          properties:
+            description: { type: string, example: "I sold 342 copies of Whispers of the Ganges but haven't received the remaining ₹3,570." }
+            attachments:
+              type: array
+              items: { $ref: '#/components/schemas/Attachment' }
+            messages:
+              type: array
+              items: { $ref: '#/components/schemas/TicketMessage' }
+            aiDraft: { type: string, nullable: true }
+
+    TicketMessage:
+      type: object
+      properties:
+        id: { type: string, example: "662a1234567890abcdef4001" }
+        senderId: { type: string }
+        senderName: { type: string, example: "Aditi Verma" }
+        senderRole: { type: string, enum: [author, admin], example: "admin" }
+        visibility: { type: string, enum: [public, internal], example: "public" }
+        body: { type: string, example: "Hello Priya, I checked your Q3 royalty settlement. It has been batched for release on Feb 15th." }
+        fromAiDraft: { type: boolean, example: true }
+        createdAt: { type: string, format: date-time }
+
+    StatsSummary:
+      type: object
+      properties:
+        total: { type: integer, example: 45 }
+        open: { type: integer, example: 12 }
+        inProgress: { type: integer, example: 18 }
+        resolved: { type: integer, example: 15 }
+        critical: { type: integer, example: 3 }
+
+    DraftResponse:
+      type: object
+      properties:
+        draft: { type: string, example: "Dear Priya,\n\nThank you for reaching out regarding your pending royalties..." }
+        source: { type: string, enum: [llm, template, cache], example: "llm" }
+        model: { type: string, example: "gemini:gemini-2.5-flash" }
+
+    AiStatusResponse:
+      type: object
+      properties:
+        configured: { type: boolean, example: true }
+        circuitBreaker: { type: string, enum: [CLOSED, OPEN, HALF_OPEN], example: "CLOSED" }
+        providers:
+          type: array
+          items:
+            type: object
+            properties:
+              provider: { type: string, example: "gemini" }
+              configured: { type: boolean, example: true }
+              totalCalls: { type: integer, example: 124 }
+              failures: { type: integer, example: 0 }
+              totalTokens: { type: integer, example: 152640 }
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: "priya.sharma@email.com" }
+        password: { type: string, example: "Password123!" }
+
+    CreateTicketInput:
+      type: object
+      required: [subject, description]
+      properties:
+        bookId: { type: string, nullable: true, example: "662a1234567890abcdef2001" }
+        subject: { type: string, minLength: 3, maxLength: 200, example: "Missing Q3 royalty payout" }
+        description: { type: string, minLength: 10, maxLength: 5000, example: "I have pending royalties of ₹3,570 for last quarter. When will this be credited to my HDFC account?" }
+        attachments:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/Attachment'
+
+    UpdateTicketInput:
+      type: object
+      properties:
+        status: { type: string, enum: [Open, In Progress, Resolved, Closed] }
+        category:
+          type: string
+          enum:
+            - Royalty & Payments
+            - ISBN & Metadata Issues
+            - Printing & Quality
+            - Distribution & Availability
+            - Book Status & Production Updates
+            - General Inquiry
+        priority: { type: string, enum: [Critical, High, Medium, Low] }
+        assignee: { type: string, nullable: true, enum: [me] }
+
+    PostMessageInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000, example: "Thank you for the update!" }
+        fromAiDraft: { type: boolean, default: false }
+
+    InternalNoteInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000, example: "Checked with finance team: transaction ref #TXN99281." }
+
+    DraftRequestInput:
+      type: object
+      properties:
+        refresh: { type: boolean, default: false }
