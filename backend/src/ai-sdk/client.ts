@@ -23,6 +23,8 @@ export interface AiSdkConfig {
     openai: ProviderSettings;
     anthropic: ProviderSettings;
     openrouter: ProviderSettings;
+    grok?: ProviderSettings;
+    groq?: ProviderSettings;
   };
   /** Route per task, e.g. `{ classify: "gemini:gemini-2.0-flash,openai:gpt-4o-mini" }`. */
   routes: Record<string, string | undefined>;
@@ -45,8 +47,8 @@ export interface AiClientExtras {
   silent?: boolean;
 }
 
-/** Provider priority when no explicit route is configured. */
-const DEFAULT_PRIORITY = ['gemini', 'openai', 'anthropic', 'openrouter'];
+/** Provider priority when no explicit route is configured: Gemini -> Groq -> Grok -> OpenRouter -> OpenAI -> Anthropic. */
+const DEFAULT_PRIORITY = ['gemini', 'groq', 'grok', 'openrouter', 'openai', 'anthropic'];
 
 /**
  * The SDK's single public entry point. Application code asks for a *task*; the client decides
@@ -86,14 +88,25 @@ export class AiClient {
 }
 
 export const createAiClient = (config: AiSdkConfig, extras: AiClientExtras = {}): AiClient => {
-  const { gemini, openai, anthropic, openrouter } = config.providers;
+  const { gemini, openai, anthropic, openrouter, grok, groq } = config.providers;
+
+  const defaultProviders: AiProvider[] = [
+    new GeminiProvider(gemini),
+    new OpenAiCompatibleProvider({ name: 'openai', ...openai, nativeStructuredOutput: true }),
+    new AnthropicProvider(anthropic),
+    new OpenAiCompatibleProvider({ name: 'openrouter', ...openrouter, nativeStructuredOutput: false }),
+  ];
+
+  if (groq) {
+    defaultProviders.push(new OpenAiCompatibleProvider({ name: 'groq', ...groq, nativeStructuredOutput: false }));
+  }
+  if (grok) {
+    defaultProviders.push(new OpenAiCompatibleProvider({ name: 'grok', ...grok, nativeStructuredOutput: false }));
+  }
 
   const providers = new Map<string, AiProvider>(
     [
-      new GeminiProvider(gemini),
-      new OpenAiCompatibleProvider({ name: 'openai', ...openai, nativeStructuredOutput: true }),
-      new AnthropicProvider(anthropic),
-      new OpenAiCompatibleProvider({ name: 'openrouter', ...openrouter, nativeStructuredOutput: false }),
+      ...defaultProviders,
       ...(extras.providers ?? []),
     ].map((provider) => [provider.name, provider]),
   );

@@ -60,7 +60,20 @@ export const env = {
       openrouter: {
         apiKey: process.env.OPENROUTER_API_KEY?.trim() ?? '',
         baseUrl: readString('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
-        defaultModel: readString('OPENROUTER_MODEL', 'meta-llama/llama-3.3-70b-instruct'),
+        defaultModel: readString('OPENROUTER_MODEL', 'google/gemini-2.5-flash'),
+      },
+      groq: {
+        apiKey: process.env.GROQ_API_KEY?.trim() ?? process.env.GROK_API_KEY?.trim() ?? '',
+        baseUrl: (() => {
+          const raw = process.env.GROQ_API_BASE_URL?.trim() || process.env.GROQ_BASE_URL?.trim() || 'https://api.groq.com/openai/v1';
+          return raw.endsWith('/openai/v1') ? raw : `${raw.replace(/\/$/, '')}/openai/v1`;
+        })(),
+        defaultModel: readString('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+      },
+      grok: {
+        apiKey: process.env.GROK_API_KEY?.trim() ?? process.env.XAI_API_KEY?.trim() ?? '',
+        baseUrl: readString('GROK_BASE_URL', 'https://api.x.ai/v1'),
+        defaultModel: readString('GROK_MODEL', 'grok-2-latest'),
       },
     },
     // Fallback chains as "provider:model,provider:model". Unset tasks use the default route;
