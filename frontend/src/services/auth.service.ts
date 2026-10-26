@@ -10,4 +10,15 @@ export const authService = {
   async me() {
     return (await api.get<User>("/auth/me")).data;
   },
+
+  async onboardAuthor(data: {
+    name: string;
+    email: string;
+    password?: string;
+    phone?: string;
+    city?: string;
+    authorCode?: string;
+  }) {
+    return (await api.post<User>("/auth/authors", data)).data;
+  },
 };

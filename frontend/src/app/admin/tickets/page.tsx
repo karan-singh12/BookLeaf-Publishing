@@ -1,11 +1,12 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { OnboardAuthorModal } from "@/components/admin/OnboardAuthorModal";
 import { QueueFilters } from "@/components/admin/QueueFilters";
 import { QueueItem } from "@/components/admin/QueueItem";
 import { QueueStats } from "@/components/admin/QueueStats";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { EmptyState, ErrorState, PageSpinner, Pagination, Skeleton } from "@/components/ui";
+import { Button, EmptyState, ErrorState, PageSpinner, Pagination, Skeleton } from "@/components/ui";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useQueue, useTicketStats } from "@/hooks/use-tickets";
 import { useUrlParams } from "@/hooks/use-url-params";
@@ -33,6 +34,7 @@ function TicketQueue() {
   const filters = parseQueueFilters(params);
   const page = parsePage(params);
 
+  const [isOnboardOpen, setIsOnboardOpen] = useState(false);
   const [searchText, setSearchText] = useState(filters.q ?? "");
   const [urlSearch, setUrlSearch] = useState(filters.q ?? "");
   if ((filters.q ?? "") !== urlSearch) {
@@ -61,7 +63,20 @@ function TicketQueue() {
 
   return (
     <>
-      <PageHeader title="Ticket Queue" description="Active tickets are listed first, most urgent and oldest at the top. New tickets and replies appear live." />
+      <PageHeader
+        title="Ticket Queue"
+        description="Active tickets are listed first, most urgent and oldest at the top. New tickets and replies appear live."
+        action={
+          <Button variant="primary" size="sm" onClick={() => setIsOnboardOpen(true)}>
+            + Onboard Author
+          </Button>
+        }
+      />
+
+      <OnboardAuthorModal
+        isOpen={isOnboardOpen}
+        onClose={() => setIsOnboardOpen(false)}
+      />
 
       <div className="space-y-5">
         <QueueStats stats={stats.data} />

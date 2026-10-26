@@ -93,6 +93,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
 
+  /auth/authors:
+    post:
+      summary: Onboard a New Author (Admin Only)
+      description: Operations admins provision a new author account with an optional initial password and auto-assigned author code.
+      tags: [Authentication]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name: { type: string, example: "Vikramaditya Roy" }
+                email: { type: string, format: email, example: "vikramaditya@example.com" }
+                password: { type: string, example: "Password123!" }
+                authorCode: { type: string, example: "AUTH011" }
+                city: { type: string, example: "Bangalore" }
+                phone: { type: string, example: "+91-98765-43210" }
+      responses:
+        201:
+          description: Author onboarded successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiSuccess'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+        403:
+          $ref: '#/components/responses/Forbidden'
+        409:
+          description: Author with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
   /books:
     get:
       summary: List Books

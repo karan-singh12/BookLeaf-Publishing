@@ -31,4 +31,41 @@ export const authService = {
     }
     return presentUser(user);
   },
+
+  async onboardAuthor(data: {
+    name: string;
+    email: string;
+    password?: string;
+    phone?: string;
+    city?: string;
+    authorCode?: string;
+  }) {
+    const existing = await userRepository.findByEmail(data.email);
+    if (existing) {
+      throw AppError.conflict('An author with this email address already exists.');
+    }
+
+    let code = data.authorCode?.trim().toUpperCase();
+    if (!code) {
+      const count = await userRepository.countAuthors();
+      code = `AUTH${String(count + 1).padStart(3, '0')}`;
+    }
+
+    const rawPassword = data.password?.trim() || 'Password123!';
+    const passwordHash = await bcrypt.hash(rawPassword, 10);
+
+    const user = await userRepository.create({
+      name: data.name.trim(),
+      email: data.email.toLowerCase().trim(),
+      authorCode: code,
+      role: 'author',
+      phone: data.phone?.trim() ?? '',
+      city: data.city?.trim() ?? '',
+      passwordHash,
+      isActive: true,
+      joinedDate: new Date(),
+    });
+
+    return presentUser(user);
+  },
 };

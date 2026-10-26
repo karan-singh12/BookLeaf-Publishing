@@ -1,6 +1,6 @@
 import { MESSAGES } from '../constants/messages';
 import { authService } from '../services/auth.service';
-import { ok } from '../utils/response';
+import { created, ok } from '../utils/response';
 import { handle, handlePublic, None } from './handler';
 
 export const authController = {
@@ -12,5 +12,10 @@ export const authController = {
   getProfile: handle(async ({ auth }, res) => {
     const profile = await authService.getProfile(auth.userId);
     return ok(res, MESSAGES.common.fetched('Profile'), profile);
+  }),
+
+  onboardAuthor: handle(async ({ body }, res) => {
+    const author = await authService.onboardAuthor(body as any);
+    return created(res, 'Author onboarded successfully.', author);
   }),
 };
